@@ -21,10 +21,13 @@ export class Rules {
 
     static async forPath(path: Path): Promise<Rules> {
         const ruleFileNames: string[] | undefined = config(ConfigItem.IgnoreFileTypes);
+
         if (ruleFileNames === undefined) {
             return new Rules(path);
         }
+
         const ruleFilePath = await lookUpwards(path.uri, ruleFileNames);
+
         return ruleFilePath.match(
             async (ruleFilePath) => await Rules.read(ruleFilePath),
             async () => new Rules(path)
@@ -37,6 +40,7 @@ export class Rules {
         const rules = new Rules(new Path(ruleFilePath).parent());
         rules.name = OSPath.basename(ruleFilePath.path);
         rules.add(ruleList);
+
         return rules;
     }
 
@@ -54,16 +58,20 @@ export class Rules {
                         "Tried to apply ignore rules to a path that wasn't relative to the rule path!"
                     );
                 });
+
             if (itemIsDir(item)) {
                 path += "/";
             }
+
             const ignored = this.rules.test(path).ignored;
+
             if (ignored) {
                 item.alwaysShow = false;
                 if (config(ConfigItem.LabelIgnoredFiles)) {
                     item.description = `(in ${this.name})`;
                 }
             }
+
             return item;
         });
     }

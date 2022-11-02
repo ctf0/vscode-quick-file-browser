@@ -37,6 +37,7 @@ export function itemIsDir(item: FileItem): boolean {
     if (item.fileType === undefined) {
         return false;
     }
+
     return !!(item.fileType | FileType.Directory);
 }
 
@@ -49,11 +50,14 @@ export function fileRecordCompare(left: [string, FileType], right: [string, File
         right[0].toLowerCase(),
         (right[1] & FileType.Directory) === FileType.Directory,
     ];
+
     if (leftDir && !rightDir) {
         return -1;
     }
+
     if (rightDir && !leftDir) {
         return 1;
     }
+
     return leftName > rightName ? 1 : leftName === rightName ? 0 : -1;
 }

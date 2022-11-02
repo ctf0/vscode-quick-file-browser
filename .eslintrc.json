@@ -5,12 +5,51 @@
         "ecmaVersion": 6,
         "sourceType": "module"
     },
-    "plugins": ["@typescript-eslint"],
+    "plugins": [
+        "@typescript-eslint"
+    ],
     "rules": {
         "@typescript-eslint/semi": "warn",
         "curly": "warn",
         "eqeqeq": "warn",
         "no-throw-literal": "warn",
-        "semi": "off"
+        "semi": "off",
+        "padding-line-between-statements": [
+            2,
+            {
+                "blankLine": "always",
+                "prev": "*",
+                "next": [
+                    "return",
+                    "try",
+                    "function"
+                ]
+            },
+            {
+                "blankLine": "always",
+                "prev": [
+                    "block-like",
+                    "let",
+                    "const"
+                ],
+                "next": [
+                    "if"
+                ]
+            },
+            {
+                "blankLine": "always",
+                "prev": [
+                    "if"
+                ],
+                "next": [
+                    "*"
+                ]
+            },
+            {
+                "blankLine": "always",
+                "prev": "directive",
+                "next": "*"
+            }
+        ]
     }
 }

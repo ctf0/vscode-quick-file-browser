@@ -94,8 +94,10 @@ export class Path {
         if (this.atTop()) {
             return None;
         }
+
         const current = new Path(this.pathUri);
         this.pathUri = Uri.joinPath(this.pathUri, "..");
+
         return current.relativeTo(this.pathUri);
     }
 
@@ -107,7 +109,9 @@ export class Path {
         if (this.pathUri.authority !== other.authority || this.pathUri.scheme !== other.scheme) {
             return None;
         }
+
         const relPath = OSPath.relative(other.fsPath, this.pathUri.fsPath);
+
         return Some(relPath);
     }
 
@@ -117,6 +121,7 @@ export class Path {
 
     async isDir(): Promise<boolean> {
         const stat = await this.stat();
+
         return stat.match(
             (stat) => !!(stat.type | FileType.Directory),
             () => false
@@ -125,6 +130,7 @@ export class Path {
 
     async isFile(): Promise<boolean> {
         const stat = await this.stat();
+
         return stat.match(
             (stat) => !!(stat.type | FileType.File),
             () => false
@@ -140,9 +146,11 @@ export function endsWithPathSeparator(value: string): Option<string> {
     if (value.endsWith("/")) {
         return Some(value.slice(0, value.length - 1));
     }
+
     if (value.endsWith(OSPath.sep)) {
         return Some(value.slice(0, value.length - OSPath.sep.length));
     }
+
     return None;
 }
 
@@ -162,16 +170,20 @@ export async function lookUpwards(
     files: string[]
 ): Promise<Result<Uri, FileSystemError>> {
     const path = new Path(uri);
+
     if (!(await path.isDir())) {
         return Err(FileSystemError.FileNotADirectory(uri));
     }
+
     while (true) {
         for (const file of files) {
             let filePath = path.append(file);
+
             if (await filePath.isFile()) {
                 return Ok(filePath.uri);
             }
         }
+
         if (path.pop().isNone()) {
             return Err(FileSystemError.FileNotFound());
         }

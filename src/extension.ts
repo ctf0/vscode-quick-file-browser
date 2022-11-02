@@ -94,24 +94,27 @@ class FileBrowser {
     }
 
     async update() {
-        this.current.enabled = false;
         this.current.show();
         this.current.busy = true;
         this.current.title = this.path.fsPath;
+
         if (!this.inActions) {
             this.current.value = "";
         }
 
         const stat = (await Result.try(vscode.workspace.fs.stat(this.path.uri))).unwrap();
+
         if (stat && this.inActions && (stat.type & FileType.File) === FileType.File) {
             const selectedFile = new Path(this.path.uri).pop().unwrap();
             this.items = [];
+
             if (this.current.value !== selectedFile && this.current.value !== "") {
                 this.items.push(...[
                     action(`$(new-file) Create file: ${this.current.value}`, Action.NewFile, this.current.value),
                     action(`$(new-folder) Create folder: ${this.current.value}`, Action.NewFolder, this.current.value),
                 ]);
             }
+
             this.items.push(...[
                 action(`$(file) Open file '${selectedFile}'`, Action.OpenFile),
                 action(`$(split-horizontal) Open file '${selectedFile}' to the side`, Action.OpenFileBeside),
@@ -127,12 +130,14 @@ class FileBrowser {
         ) {
             const selectedDir = new Path(this.path.uri).pop().unwrap();
             this.items = [];
+
             if (this.current.value !== selectedDir && this.current.value !== "") {
                 this.items.push(...[
                     action(`$(new-file) Create file: ${this.current.value}`, Action.NewFile, this.current.value),
                     action(`$(new-folder) Create folder: ${this.current.value}`, Action.NewFolder, this.current.value),
                 ]);
             }
+
             this.items.push(...[
                 action("$(folder-opened) Open this folder", Action.OpenFolder),
                 action(
@@ -147,16 +152,21 @@ class FileBrowser {
             const records = await vscode.workspace.fs.readDirectory(this.path.uri);
             records.sort(fileRecordCompare);
             let items = records.map((entry) => new FileItem(entry));
+
             if (config(ConfigItem.HideIgnoreFiles)) {
                 const rules = await Rules.forPath(this.path);
                 items = rules.filter(this.path, items);
             }
+
             if (config(ConfigItem.RemoveIgnoredFiles)) {
                 items = items.filter((item) => item.alwaysShow);
             }
+
             this.items = items;
             this.current.items = items;
-            this.current.activeItems = items.filter((item) => this.file.contains(item.name));
+            this.current.activeItems = this.file.isSome()
+                ? items.filter((item) => this.file.contains(item.name))
+                : [items[0]];
         } else {
             this.items = [
                 action(`$(new-file) Create file: ${this.current.value}`, Action.NewFile, this.current.value),
@@ -164,8 +174,8 @@ class FileBrowser {
             ];
             this.current.items = this.items;
         }
+
         this.current.busy = false;
-        this.current.enabled = true;
     }
 
     onDidChangeValue(value: string, isAutoComplete = false) {
@@ -177,13 +187,9 @@ class FileBrowser {
             this.autoCompletion = undefined;
         }
 
-        const existingItem = this.items.find((item) => item.name === value);
         if (value === "") {
             this.current.items = this.items;
-            this.current.activeItems = [];
-        } else if (existingItem !== undefined) {
-            this.current.items = this.items;
-            this.current.activeItems = [existingItem];
+            this.current.activeItems = [this.items.find((item) => item.name === this.file.option) || this.items[0]];
         } else {
             endsWithPathSeparator(value).match(
                 (path) => {
@@ -195,7 +201,9 @@ class FileBrowser {
                         this.stepIntoFolder(this.path.append(path));
                     }
                 },
-                () => { }
+                () => {
+                    this.current.items = this.items.filter((item) => item.name.includes(value));
+                }
             );
         }
     }
@@ -252,6 +260,7 @@ class FileBrowser {
         if (this.inActions) {
             return;
         }
+
         await this.activeItem().match(
             async (item) => {
                 this.inActions = true;
@@ -288,6 +297,7 @@ class FileBrowser {
 
         const newIndex = this.autoCompletion.index;
         const length = this.autoCompletion.items.length;
+
         if (newIndex < length) {
             // This also checks out when items is empty
             const item = this.autoCompletion.items[newIndex];
@@ -340,17 +350,21 @@ class FileBrowser {
             }
             case Action.OpenFile: {
                 const path = this.path.clone();
+
                 if (item.name && item.name.length > 0) {
                     path.push(item.name);
                 }
+
                 this.openFile(path.uri);
                 break;
             }
             case Action.OpenFileBeside: {
                 const path = this.path.clone();
+
                 if (item.name && item.name.length > 0) {
                     path.push(item.name);
                 }
+
                 this.openFile(path.uri, ViewColumn.Beside);
                 break;
             }
@@ -382,6 +396,7 @@ class FileBrowser {
                         (workspaceFolder) => Uri.joinPath(workspaceFolder, result),
                         () => Uri.joinPath(this.path.uri, result)
                     );
+
                     if ((await Result.try(vscode.workspace.fs.rename(uri, newUri))).isOk()) {
                         this.file = Some(OSPath.basename(result));
                     } else {
@@ -390,6 +405,7 @@ class FileBrowser {
                         );
                     }
                 }
+
                 this.show();
                 this.keepAlive = false;
                 this.inActions = false;
@@ -408,16 +424,19 @@ class FileBrowser {
                 const fileType = isDir ? "folder" : "file";
                 const goAhead = `$(trash) Delete the ${fileType} "${fileName}"`;
                 const result = await vscode.window.showQuickPick(["$(close) Cancel", goAhead], {});
+
                 if (result === goAhead) {
                     const delOp = await Result.try(
                         vscode.workspace.fs.delete(uri, { recursive: isDir })
                     );
+
                     if (delOp.isErr()) {
                         vscode.window.showErrorMessage(
                             `Failed to delete ${fileType} "${fileName}"`
                         );
                     }
                 }
+
                 this.show();
                 this.keepAlive = false;
                 this.inActions = false;
@@ -444,13 +463,14 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand("quick-file-browser.open", async () => {
             const document = vscode.window.activeTextEditor?.document;
-            let workspaceFolder =
-                vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+            let workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
             let path = new Path(workspaceFolder?.uri || Uri.file(OS.homedir()));
             let file: Option<string> = None;
             const uriSchemeMap: any = config(ConfigItem.UriSchemeUriCommandMap) || {};
+
             if (document && uriSchemeMap.hasOwnProperty(document.uri.scheme)) {
                 const uri: vscode.Uri | undefined = await vscode.commands.executeCommand(uriSchemeMap[document.uri.scheme]);
+
                 if (uri) {
                     path = new Path(uri);
                 }
@@ -458,6 +478,7 @@ export function activate(context: vscode.ExtensionContext) {
                 path = new Path(document.uri);
                 file = path.pop();
             }
+
             active = Some(new FileBrowser(path, file));
             setContext(true);
         })
@@ -490,4 +511,4 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
-export function deactivate() {}
+export function deactivate() { }
