@@ -93,8 +93,15 @@ class FileBrowser {
         this.current.show();
     }
 
+    defaultOptions() {
+        return [
+            action(`$(new-file) Create file: ${this.current.value}`, Action.NewFile, this.current.value),
+            action(`$(new-folder) Create folder: ${this.current.value}`, Action.NewFolder, this.current.value)
+        ];
+    }
+
     async update() {
-        this.current.show();
+        this.show();
         this.current.busy = true;
         this.current.title = this.path.fsPath;
 
@@ -104,53 +111,74 @@ class FileBrowser {
 
         const stat = (await Result.try(vscode.workspace.fs.stat(this.path.uri))).unwrap();
 
-        if (stat && this.inActions && (stat.type & FileType.File) === FileType.File) {
-            const selectedFile = new Path(this.path.uri).pop().unwrap();
+        let defaultItems: any = [];
+
+        // we have a search value
+        if (this.current.value !== "") {
+            defaultItems = this.defaultOptions();
+        }
+
+        // selection is file + showing actions
+        if (
+            stat &&
+            this.inActions &&
+            (stat.type & FileType.File) === FileType.File
+        ) {
             this.items = [];
 
-            if (this.current.value !== selectedFile && this.current.value !== "") {
-                this.items.push(...[
-                    action(`$(new-file) Create file: ${this.current.value}`, Action.NewFile, this.current.value),
-                    action(`$(new-folder) Create folder: ${this.current.value}`, Action.NewFolder, this.current.value),
-                ]);
+            const selectedFile = new Path(this.path.uri).pop().unwrap();
+
+            if (this.current.value && this.current.value !== selectedFile) {
+                this.items.push(...defaultItems);
             }
 
-            this.items.push(...[
-                action(`$(file) Open file '${selectedFile}'`, Action.OpenFile),
-                action(`$(split-horizontal) Open file '${selectedFile}' to the side`, Action.OpenFileBeside),
-                action(`$(edit) Rename file '${selectedFile}'`, Action.RenameFile),
-                action(`$(trash) Delete file '${selectedFile}'`, Action.DeleteFile),
-            ]);
+            this.items.push(
+                ...[
+                    action(`$(file) Open file '${selectedFile}'`, Action.OpenFile),
+                    action(`$(split-horizontal) Open file '${selectedFile}' to the side`, Action.OpenFileBeside),
+                    action(`$(edit) Rename file '${selectedFile}'`, Action.RenameFile),
+                    action(`$(trash) Delete file '${selectedFile}'`, Action.DeleteFile),
+                ]
+            );
 
             this.current.items = this.items;
-        } else if (
+        }
+        // selection is directory + showing actions
+        else if (
             stat &&
             this.inActions &&
             (stat.type & FileType.Directory) === FileType.Directory
         ) {
-            const selectedDir = new Path(this.path.uri).pop().unwrap();
             this.items = [];
 
-            if (this.current.value !== selectedDir && this.current.value !== "") {
-                this.items.push(...[
-                    action(`$(new-file) Create file: ${this.current.value}`, Action.NewFile, this.current.value),
-                    action(`$(new-folder) Create folder: ${this.current.value}`, Action.NewFolder, this.current.value),
-                ]);
+            const selectedDir = new Path(this.path.uri).pop().unwrap();
+
+            if (this.current.value && this.current.value !== selectedDir) {
+                this.items.push(...defaultItems);
             }
 
-            this.items.push(...[
-                action("$(folder-opened) Open this folder", Action.OpenFolder),
-                action(
-                    "$(folder-opened) Open this folder in a new window",
-                    Action.OpenFolderInNewWindow
-                ),
-                action("$(edit) Rename this folder", Action.RenameFile),
-                action("$(trash) Delete this folder", Action.DeleteFile),
-            ]);
+            // if we have an existing folder
+            if (this.current.activeItems.length) {
+                this.items.push(
+                    ...[
+                        action(`$(folder-opened) Open folder in current window '${selectedDir}'`, Action.OpenFolder),
+                        action(`$(folder-opened) Open folder in a new window '${selectedDir}'`, Action.OpenFolderInNewWindow),
+                        action(`$(edit) Rename folder '${selectedDir}'`, Action.RenameFile),
+                        action(`$(trash) Delete folder '${selectedDir}'`, Action.DeleteFile),
+                    ]
+                );
+            }
+
             this.current.items = this.items;
-        } else if (stat && (stat.type & FileType.Directory) === FileType.Directory) {
+        }
+        // selection is directory
+        else if (
+            stat &&
+            (stat.type & FileType.Directory) === FileType.Directory
+        ) {
             const records = await vscode.workspace.fs.readDirectory(this.path.uri);
             records.sort(fileRecordCompare);
+
             let items = records.map((entry) => new FileItem(entry));
 
             if (config(ConfigItem.HideIgnoreFiles)) {
@@ -167,11 +195,13 @@ class FileBrowser {
             this.current.activeItems = this.file.isSome()
                 ? items.filter((item) => this.file.contains(item.name))
                 : [items[0]];
-        } else {
-            this.items = [
-                action(`$(new-file) Create file: ${this.current.value}`, Action.NewFile, this.current.value),
-                action("$(new-folder) Create this folder", Action.NewFolder, this.current.value)
-            ];
+        }
+        // selection is file
+        else {
+            if (this.current.value) {
+                this.items = this.defaultOptions();
+            }
+
             this.current.items = this.items;
         }
 
@@ -179,7 +209,7 @@ class FileBrowser {
     }
 
     onDidChangeValue(value: string, isAutoComplete = false) {
-        if (this.inActions) {
+        if (this.inActions && value) {
             return;
         }
 
@@ -188,8 +218,8 @@ class FileBrowser {
         }
 
         if (value === "") {
-            this.current.items = this.items;
-            this.current.activeItems = [this.items.find((item) => item.name === this.file.option) || this.items[0]];
+            this.inActions = false
+            this.update()
         } else {
             endsWithPathSeparator(value).match(
                 (path) => {
@@ -202,7 +232,15 @@ class FileBrowser {
                     }
                 },
                 () => {
-                    this.current.items = this.items.filter((item) => item.name.includes(value));
+                    if (!this.inActions) {
+                        this.current.items = this.items.filter((item) => item.name.toLowerCase().startsWith(value.toLowerCase()));
+
+                        if (!this.current.items.length) {
+                            this.current.items = this.defaultOptions()
+                        }
+                    }
+
+                    this.inActions = false
                 }
             );
         }
@@ -225,7 +263,8 @@ class FileBrowser {
     async stepIntoFolder(folder: Path) {
         if (!this.path.equals(folder)) {
             this.path = folder;
-            this.file = this.pathHistory[this.path.id] || None;
+            this.file = None;
+
             await this.update();
         }
     }
@@ -237,10 +276,12 @@ class FileBrowser {
             } else if (item.fileType !== undefined) {
                 if ((item.fileType & FileType.Directory) === FileType.Directory) {
                     await this.stepIntoFolder(this.path.append(item.name));
-                } else if ((item.fileType & FileType.File) === FileType.File) {
+                }
+                else if ((item.fileType & FileType.File) === FileType.File) {
                     this.path.push(item.name);
                     this.file = None;
                     this.inActions = true;
+
                     await this.update();
                 }
             }
@@ -249,42 +290,49 @@ class FileBrowser {
 
     async stepOut() {
         this.inActions = false;
+
         if (!this.path.atTop()) {
             this.pathHistory[this.path.id] = this.activeItem().map((item) => item.name);
             this.file = this.path.pop();
+
             await this.update();
         }
     }
 
     async actions() {
         if (this.inActions) {
-            return;
+            const stat = (await Result.try(vscode.workspace.fs.stat(this.path.uri))).unwrap();
+            if (stat && (stat.type & FileType.File) === FileType.File) {
+                return this.stepOut()
+            }
+
+            this.inActions = false;
+
+            return this.update();
         }
+
+        this.inActions = true;
+        this.file = None;
 
         await this.activeItem().match(
             async (item) => {
-                this.inActions = true;
                 this.path.push(item.name);
-                this.file = None;
-                await this.update();
             },
-            async () => {
-                this.inActions = true;
-                this.file = None;
-                await this.update();
-            }
+            async () => {}
         );
+
+        await this.update();
     }
 
     tabCompletion(tabNext: boolean) {
-        if (this.inActions) {
+        if (this.inActions || !this.current.value) {
             return;
         }
 
         if (this.autoCompletion) {
             const length = this.autoCompletion.items.length;
             const step = tabNext ? 1 : -1;
-            this.autoCompletion.index = (this.autoCompletion.index + length + step) % length;
+            this.autoCompletion.index = (this.autoCompletion.index + length + step) % length || 0;
         } else {
             const items = this.items.filter((i) =>
                 i.name.toLowerCase().startsWith(this.current.value.toLowerCase())
@@ -302,8 +350,9 @@ class FileBrowser {
             // This also checks out when items is empty
             const item = this.autoCompletion.items[newIndex];
             this.current.value = item.name;
+
             if (length === 1 && item.fileType === FileType.Directory) {
-                this.current.value += "/";
+                return this.onDidAccept();
             }
 
             this.onDidChangeValue(this.current.value, true);
@@ -312,6 +361,7 @@ class FileBrowser {
 
     onDidAccept() {
         this.autoCompletion = undefined;
+
         this.activeItem().ifSome((item) => {
             if (item.action !== undefined) {
                 this.runAction(item);
@@ -333,19 +383,40 @@ class FileBrowser {
             .then((doc) => vscode.window.showTextDocument(doc, column));
     }
 
+    async shouldGoUp(pathUri) {
+        return (await pathUri.isFile() || await pathUri.isDir()) &&
+                this.current.items.length > this.defaultOptions().length
+    }
+
     async runAction(item: FileItem) {
         switch (item.action) {
             case Action.NewFolder: {
-                const uri = this.path.parent().append(item.name).uri;
-                await vscode.workspace.fs.createDirectory(uri);
-                this.path = new Path(uri);
-                this.inActions = false;
+                let pathUri: any = this.path
+
+                if (await this.shouldGoUp(pathUri)) {
+                    pathUri = pathUri.parent().append(item.name).uri;
+                } else {
+                    pathUri = pathUri.append(item.name).uri;
+                }
+
+                await vscode.workspace.fs.createDirectory(pathUri);
+                this.path = new Path(pathUri);
+                this.inActions = true
+
                 await this.update();
                 break;
             }
             case Action.NewFile: {
-                const uri = this.path.parent().append(item.name).uri;
-                this.openFile(uri.with({ scheme: "untitled" }));
+                let pathUri: any = this.path
+
+                if (await this.shouldGoUp(pathUri)) {
+                    pathUri = pathUri.parent().append(item.name).uri;
+                } else {
+                    pathUri = pathUri.append(item.name).uri;
+                }
+
+                this.openFile(pathUri.with({ scheme: "untitled" }));
+
                 break;
             }
             case Action.OpenFile: {
@@ -356,6 +427,7 @@ class FileBrowser {
                 }
 
                 this.openFile(path.uri);
+
                 break;
             }
             case Action.OpenFileBeside: {
@@ -366,6 +438,7 @@ class FileBrowser {
                 }
 
                 this.openFile(path.uri, ViewColumn.Beside);
+
                 break;
             }
             case Action.RenameFile: {
@@ -377,11 +450,13 @@ class FileBrowser {
                 const fileName = this.path.pop().unwrapOrElse(() => {
                     throw new Error("Can't rename an empty file name!");
                 });
+
                 const fileType = isDir ? "folder" : "file";
                 const workspaceFolder = this.path.getWorkspaceFolder().map((wsf) => wsf.uri);
                 const relPath = workspaceFolder
                     .andThen((workspaceFolder) => new Path(uri).relativeTo(workspaceFolder))
                     .unwrapOr(fileName);
+
                 const extension = OSPath.extname(relPath);
                 const startSelection = relPath.length - fileName.length;
                 const endSelection = startSelection + (fileName.length - extension.length);
@@ -390,7 +465,9 @@ class FileBrowser {
                     value: relPath,
                     valueSelection: [startSelection, endSelection],
                 });
+
                 this.file = Some(fileName);
+
                 if (result !== undefined) {
                     const newUri = workspaceFolder.match(
                         (workspaceFolder) => Uri.joinPath(workspaceFolder, result),
@@ -410,24 +487,27 @@ class FileBrowser {
                 this.keepAlive = false;
                 this.inActions = false;
                 this.update();
+
                 break;
             }
             case Action.DeleteFile: {
                 this.keepAlive = true;
                 this.hide();
+
                 const uri = this.path.uri;
                 const stat = await vscode.workspace.fs.stat(uri);
                 const isDir = (stat.type & FileType.Directory) === FileType.Directory;
                 const fileName = this.path.pop().unwrapOrElse(() => {
                     throw new Error("Can't delete an empty file name!");
                 });
+
                 const fileType = isDir ? "folder" : "file";
                 const goAhead = `$(trash) Delete the ${fileType} "${fileName}"`;
                 const result = await vscode.window.showQuickPick(["$(close) Cancel", goAhead], {});
 
                 if (result === goAhead) {
                     const delOp = await Result.try(
-                        vscode.workspace.fs.delete(uri, { recursive: isDir })
+                        vscode.workspace.fs.delete(uri, { recursive: isDir, useTrash: true })
                     );
 
                     if (delOp.isErr()) {
@@ -441,14 +521,17 @@ class FileBrowser {
                 this.keepAlive = false;
                 this.inActions = false;
                 this.update();
+
                 break;
             }
             case Action.OpenFolder: {
                 vscode.commands.executeCommand("vscode.openFolder", this.path.uri);
+
                 break;
             }
             case Action.OpenFolderInNewWindow: {
                 vscode.commands.executeCommand("vscode.openFolder", this.path.uri, true);
+
                 break;
             }
             default:
@@ -457,31 +540,33 @@ class FileBrowser {
     }
 }
 
+async function init() {
+    const document = vscode.window.activeTextEditor?.document;
+    const uriSchemeMap: any = config(ConfigItem.UriSchemeUriCommandMap) || {};
+    let workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+    let path = new Path(workspaceFolder?.uri || Uri.file(OS.homedir()));
+    let file: Option<string> = None;
+
+    if (document && uriSchemeMap.hasOwnProperty(document.uri.scheme)) {
+        const uri: vscode.Uri | undefined = await vscode.commands.executeCommand(uriSchemeMap[document.uri.scheme]);
+
+        if (uri) {
+            path = new Path(uri);
+        }
+    } else if (document && !document.isUntitled) {
+        path = new Path(document.uri);
+        file = path.pop();
+    }
+
+    active = Some(new FileBrowser(path, file));
+    setContext(true);
+}
+
 export function activate(context: vscode.ExtensionContext) {
     setContext(false);
 
     context.subscriptions.push(
-        vscode.commands.registerCommand("quick-file-browser.open", async () => {
-            const document = vscode.window.activeTextEditor?.document;
-            let workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
-            let path = new Path(workspaceFolder?.uri || Uri.file(OS.homedir()));
-            let file: Option<string> = None;
-            const uriSchemeMap: any = config(ConfigItem.UriSchemeUriCommandMap) || {};
-
-            if (document && uriSchemeMap.hasOwnProperty(document.uri.scheme)) {
-                const uri: vscode.Uri | undefined = await vscode.commands.executeCommand(uriSchemeMap[document.uri.scheme]);
-
-                if (uri) {
-                    path = new Path(uri);
-                }
-            } else if (document && !document.isUntitled) {
-                path = new Path(document.uri);
-                file = path.pop();
-            }
-
-            active = Some(new FileBrowser(path, file));
-            setContext(true);
-        })
+        vscode.commands.registerCommand("quick-file-browser.open", init)
     );
 
     context.subscriptions.push(
