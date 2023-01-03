@@ -1,9 +1,10 @@
-.vscode/**
-.vscode-test/**
-src/**
 .gitignore
-vsc-extension-quickstart.md
+**/jsconfig.json
+**/*.map
+.history
+.DS_Store
+src/**
 **/tsconfig.json
-**/.eslintrc.json
-**/*.ts
-images/file-browser.gif
+**/jsconfig.json
+.github/**
+*.vsix

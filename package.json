@@ -3,7 +3,7 @@
     "publisher": "ctf0",
     "displayName": "Quick File Browser",
     "description": "A nicer alternative to the file open dialog.",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "license": "LGPL-3.0+",
     "author": {
         "name": "Bodil Stokke",
@@ -127,22 +127,16 @@
         ]
     },
     "scripts": {
-        "vscode:prepublish": "npm run esbuild-base -- --minify",
+        "vscode:prepublish": "npm run esbuild-base -- --pure:console.log --minify",
         "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
         "esbuild": "npm run esbuild-base -- --sourcemap",
         "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
-        "watch": "npm run vscode:prepublish",
-        "lint": "eslint src --ext ts --fix"
+        "watch": "npm run esbuild"
     },
     "devDependencies": {
-        "@types/glob": "^8.0.0",
         "@types/node": "^18.11.9",
         "@types/vscode": "^1.68.0",
-        "@typescript-eslint/eslint-plugin": "^5.42.1",
-        "@typescript-eslint/parser": "^5.42.1",
         "esbuild": "^0.15.13",
-        "eslint": "^8.27.0",
-        "glob": "^8.0.3",
         "typescript": "^4.8.4"
     },
     "dependencies": {
